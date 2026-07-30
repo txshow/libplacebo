@@ -345,8 +345,17 @@ PL_LIBAV_API void pl_map_hdr_metadata(struct pl_hdr_metadata *out,
     }
 
     if (data->dhp && data->dhp->application_version < 2) {
+        if (!data->dhp->num_windows ||
+            data->dhp->num_windows > FF_ARRAY_ELEMS(data->dhp->params))
+            return;
+
         const AVHDRPlusColorTransformParams *pars = &data->dhp->params[0];
-        assert(data->dhp->num_windows > 0);
+        if (pars->num_distribution_maxrgb_percentiles >
+                FF_ARRAY_ELEMS(pars->distribution_maxrgb) ||
+            pars->num_bezier_curve_anchors >
+                FF_ARRAY_ELEMS(pars->bezier_curve_anchors))
+            return;
+
         out->scene_max[0] = 10000 * av_q2d(pars->maxscl[0]);
         out->scene_max[1] = 10000 * av_q2d(pars->maxscl[1]);
         out->scene_max[2] = 10000 * av_q2d(pars->maxscl[2]);
@@ -399,7 +408,6 @@ PL_LIBAV_API void pl_map_hdr_metadata(struct pl_hdr_metadata *out,
             out->ootf.target_luma = av_q2d(data->dhp->targeted_system_display_maximum_luminance);
             out->ootf.knee_x = av_q2d(pars->knee_point_x);
             out->ootf.knee_y = av_q2d(pars->knee_point_y);
-            assert(pars->num_bezier_curve_anchors < 16);
             for (int i = 0; i < pars->num_bezier_curve_anchors; i++)
                 out->ootf.anchors[i] = av_q2d(pars->bezier_curve_anchors[i]);
             out->ootf.num_anchors = pars->num_bezier_curve_anchors;
@@ -408,11 +416,31 @@ PL_LIBAV_API void pl_map_hdr_metadata(struct pl_hdr_metadata *out,
 }
 #endif // PL_HAVE_LAV_HDR
 
-static inline void *pl_get_side_data_raw(const AVFrame *frame,
-                                         enum AVFrameSideDataType type)
+static bool pl_avframe_side_data_valid(const AVFrameSideData *data,
+                                       size_t minimum_size, size_t alignment)
 {
-    const AVFrameSideData *sd = av_frame_get_side_data(frame, type);
-    return sd ? (void *) sd->data : NULL;
+    if (!data || !data->data || data->size < minimum_size ||
+        !data->buf || !data->buf->data)
+        return false;
+
+    uintptr_t address = (uintptr_t) data->data;
+    uintptr_t buffer = (uintptr_t) data->buf->data;
+    if (address < buffer || (alignment && address % alignment))
+        return false;
+
+    size_t offset = address - buffer;
+    return offset <= data->buf->size &&
+           data->size <= data->buf->size - offset;
+}
+
+static inline void *pl_get_side_data_raw(const AVFrame *frame,
+                                         enum AVFrameSideDataType type,
+                                         size_t minimum_size,
+                                         size_t alignment)
+{
+    const AVFrameSideData *data = av_frame_get_side_data(frame, type);
+    return pl_avframe_side_data_valid(data, minimum_size, alignment)
+        ? (void *) data->data : NULL;
 }
 
 PL_LIBAV_API void pl_color_space_from_avframe(struct pl_color_space *out_csp,
@@ -425,9 +453,17 @@ PL_LIBAV_API void pl_color_space_from_avframe(struct pl_color_space *out_csp,
 
 #ifdef PL_HAVE_LAV_HDR
     pl_map_hdr_metadata(&out_csp->hdr, &(struct pl_av_hdr_metadata) {
-        .mdm = pl_get_side_data_raw(frame, AV_FRAME_DATA_MASTERING_DISPLAY_METADATA),
-        .clm = pl_get_side_data_raw(frame, AV_FRAME_DATA_CONTENT_LIGHT_LEVEL),
-        .dhp = pl_get_side_data_raw(frame, AV_FRAME_DATA_DYNAMIC_HDR_PLUS),
+        .mdm = pl_get_side_data_raw(
+            frame, AV_FRAME_DATA_MASTERING_DISPLAY_METADATA,
+            sizeof(AVMasteringDisplayMetadata),
+            _Alignof(AVMasteringDisplayMetadata)),
+        .clm = pl_get_side_data_raw(
+            frame, AV_FRAME_DATA_CONTENT_LIGHT_LEVEL,
+            sizeof(AVContentLightMetadata),
+            _Alignof(AVContentLightMetadata)),
+        .dhp = pl_get_side_data_raw(
+            frame, AV_FRAME_DATA_DYNAMIC_HDR_PLUS,
+            sizeof(AVDynamicHDRPlus), _Alignof(AVDynamicHDRPlus)),
     });
 #endif
 }

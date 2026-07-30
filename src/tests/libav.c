@@ -1,6 +1,46 @@
 #include "utils.h"
 #include "libplacebo/utils/libav.h"
 
+#ifdef PL_HAVE_LAV_HDR
+static void test_invalid_hdr10plus_metadata(void)
+{
+    struct pl_hdr_metadata hdr = {
+        .scene_avg = 100.0f,
+    };
+    AVDynamicHDRPlus hdr10plus = {
+        .application_version = 1,
+        .num_windows = PL_ARRAY_SIZE(hdr10plus.params) + 1,
+    };
+    pl_map_hdr_metadata(&hdr, &(struct pl_av_hdr_metadata) {
+        .dhp = &hdr10plus,
+    });
+    REQUIRE_CMP(hdr.scene_avg, ==, 100.0f, "f");
+
+    hdr10plus.num_windows = 1;
+    hdr10plus.params[0].num_distribution_maxrgb_percentiles =
+        PL_ARRAY_SIZE(hdr10plus.params[0].distribution_maxrgb) + 1;
+    pl_map_hdr_metadata(&hdr, &(struct pl_av_hdr_metadata) {
+        .dhp = &hdr10plus,
+    });
+    REQUIRE_CMP(hdr.scene_avg, ==, 100.0f, "f");
+
+    hdr10plus.params[0].num_distribution_maxrgb_percentiles = 0;
+    hdr10plus.params[0].num_bezier_curve_anchors =
+        PL_ARRAY_SIZE(hdr10plus.params[0].bezier_curve_anchors) + 1;
+    pl_map_hdr_metadata(&hdr, &(struct pl_av_hdr_metadata) {
+        .dhp = &hdr10plus,
+    });
+    REQUIRE_CMP(hdr.scene_avg, ==, 100.0f, "f");
+
+    hdr10plus.params[0].num_bezier_curve_anchors = 0;
+    hdr10plus.params[0].average_maxrgb = (AVRational) {1, 2};
+    pl_map_hdr_metadata(&hdr, &(struct pl_av_hdr_metadata) {
+        .dhp = &hdr10plus,
+    });
+    REQUIRE_CMP(hdr.scene_avg, ==, 5000.0f, "f");
+}
+#endif
+
 int main()
 {
     struct pl_plane_data data[4] = {0};
@@ -355,6 +395,10 @@ int main()
     pl_color_space_infer(&image.color);
     REQUIRE(pl_color_space_equal(&csp, &image.color));
     av_frame_free(&frame);
+
+#ifdef PL_HAVE_LAV_HDR
+    test_invalid_hdr10plus_metadata();
+#endif
 
     // Test enum functions
     for (enum pl_color_system sys = 0; sys < PL_COLOR_SYSTEM_COUNT; sys++) {
