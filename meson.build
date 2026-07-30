@@ -12,6 +12,7 @@ project('libplacebo', ['c', 'cpp'],
     7,
     # API version
     {
+      '373': 'add checked Dolby Vision AVFrame metadata mapping',
       '372': 'add Vulkan YCbCr image wrapping',
       '371': 'input frame.hdr.max_luma is now respecte when frame has ICC profile',
       '370': 'deprecate pl_avdovi_metadata_supported and pl_avframe_params.map_dovi_force',
