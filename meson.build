@@ -12,6 +12,7 @@ project('libplacebo', ['c', 'cpp'],
     7,
     # API version
     {
+      '375': 'add raw external YUV OpenGL sampling',
       '374': 'add pl_vulkan_swapchain_params.disable_storage',
       '373': 'add checked Dolby Vision AVFrame metadata mapping',
       '372': 'add Vulkan YCbCr image wrapping',
